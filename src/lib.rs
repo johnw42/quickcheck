@@ -63,6 +63,7 @@ macro_rules! quickcheck {
                 #[test]
                 $(#[$m])*
                 fn $fn_name() {
+                    #[allow(unused_variables)]
                     fn prop($($arg_name: $arg_ty),*) -> $ret {
                         $($code)*
                     }

@@ -14,7 +14,7 @@ use std::num::{
     NonZeroU128, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize,
 };
 use std::ops::{
-    Bound, Range, RangeFrom, RangeFull, RangeInclusive, RangeTo,
+    Bound, Range, RangeBounds, RangeFrom, RangeFull, RangeInclusive, RangeTo,
     RangeToInclusive,
 };
 use std::path::PathBuf;
@@ -22,6 +22,10 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rand::prelude::*;
+
+use self::range::*;
+
+pub mod range;
 
 /// `Gen` represents a PRNG.
 ///
@@ -46,7 +50,7 @@ impl Gen {
     /// randomly generated number. (Unless that number is used to control the
     /// size of a data structure.)
     pub fn new(size: usize) -> Gen {
-        Gen { rng: rand::make_rng(), size: size }
+        Gen { rng: rand::make_rng(), size }
     }
 
     /// Returns a `Gen` with the given seed and a default size configuration.
@@ -75,6 +79,20 @@ impl Gen {
         slice.choose(&mut self.rng)
     }
 
+    /// Returns a random value in the given range. `T` can be any built-in
+    /// integer type (including `char`, but not `bool`), and `R` can be any of
+    /// Rust's built-in range types.
+    pub fn choose_in_range<T, R>(&mut self, range: R) -> T
+    where
+        T: IntRangeBound + Copy,
+        R: RangeBounds<T>,
+        T::Unsigned: rand::distr::uniform::SampleUniform,
+        RangeToInclusive<T::Unsigned>:
+            rand::distr::uniform::SampleRange<T::Unsigned>,
+    {
+        rand_in_range(self, range)
+    }
+
     fn random<T>(&mut self) -> T
     where
         rand::distr::StandardUniform: rand::distr::Distribution<T>,
@@ -82,6 +100,12 @@ impl Gen {
         self.rng.random()
     }
 
+    /// While this method looks like it does the same thing as
+    /// [`Self::choose_in_range`], it is different because it accepts a wider
+    /// variety of types `T` and a smaller variety of range types `R`.
+    ///
+    /// In particular, it accepts floating-point types for `T` and does not
+    /// accept range types with a lower bound for `R`.
     fn random_range<T, R>(&mut self, range: R) -> T
     where
         T: rand::distr::uniform::SampleUniform,
@@ -1275,7 +1299,7 @@ mod test {
     use std::num::Wrapping;
     use std::path::PathBuf;
 
-    use super::{Arbitrary, Gen};
+    use super::*;
 
     #[test]
     fn arby_unit() {

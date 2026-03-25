@@ -10,7 +10,7 @@ fn sieve(n: usize) -> Vec<usize> {
     marked[1] = true;
     marked[2] = true;
     for p in 2..n {
-        for i in (2 * p..n).filter(|&n| n % p == 0) {
+        for i in (2 * p..n).filter(|&n| n.is_multiple_of(p)) {
             marked[i] = true;
         }
     }
@@ -22,7 +22,9 @@ fn sieve(n: usize) -> Vec<usize> {
 }
 
 fn is_prime(n: usize) -> bool {
-    n != 0 && n != 1 && (2..).take_while(|i| i * i <= n).all(|i| n % i != 0)
+    n != 0
+        && n != 1
+        && (2..).take_while(|i| i * i <= n).all(|i| !n.is_multiple_of(i))
 }
 
 fn main() {
