@@ -1289,6 +1289,93 @@ impl<A: Arbitrary> Arbitrary for NoShrink<A> {
     }
 }
 
+pub trait ValueInRange {
+    type Value;
+    const START: Self::Value;
+    const END: Self::Value;
+    const IS_INCLUSIVE: bool;
+
+    fn into_inner(self) -> Self::Value;
+}
+
+macro_rules! in_range_types {
+    { $( $int_type:ty, $exclusive:ident, $inclusive:ident ; )* }=> {
+        $(
+            #[doc = concat!("A value of type `", stringify!($int_type),
+                 "` in the range `", stringify!(START), "..", stringify!(END), "`.")]
+            #[derive(Clone, Debug)]
+            pub struct $exclusive<const START: $int_type, const END: $int_type>(pub $int_type);
+
+            impl<const START: $int_type, const END: $int_type> ValueInRange for $exclusive<START, END> {
+                type Value = $int_type;
+                const START: Self::Value = START;
+                const END: Self::Value = END;
+                const IS_INCLUSIVE: bool = false;
+
+                fn into_inner(self) -> Self::Value {
+                    self.0
+                }
+            }
+
+            impl<const START: $int_type, const END: $int_type> From<$exclusive<START, END>> for $int_type {
+                fn from(value: $exclusive<START, END>) -> Self {
+                    value.0
+                }
+            }
+
+            impl<const START: $int_type, const END: $int_type> Arbitrary for $exclusive<START, END> {
+                fn arbitrary(g: &mut Gen) -> Self {
+                    Self(g.range_choose(START..END))
+                }
+            }
+
+            #[doc = concat!("A value of type `", stringify!($int_type),
+                 "` in the range `", stringify!(START), "..=", stringify!(END), "`.")]
+            #[derive(Clone, Debug)]
+            pub struct $inclusive<const START: $int_type, const END: $int_type>(pub $int_type);
+
+            impl<const START: $int_type, const END: $int_type> ValueInRange for $inclusive<START, END> {
+                type Value = $int_type;
+                const START: Self::Value = START;
+                const END: Self::Value = END;
+                const IS_INCLUSIVE: bool = true;
+
+                fn into_inner(self) -> Self::Value {
+                    self.0
+                }
+            }
+
+            impl<const START: $int_type, const END: $int_type> From<$inclusive<START, END>> for $int_type {
+                fn from(value: $inclusive<START, END>) -> Self {
+                    value.0
+                }
+            }
+
+            impl<const START: $int_type, const END: $int_type> Arbitrary for $inclusive<START, END> {
+                fn arbitrary(g: &mut Gen) -> Self {
+                    Self(g.range_choose(START..=END))
+                }
+            }
+        )*
+    };
+}
+
+in_range_types! {
+    i8, I8InRange, I8InRangeInclusive;
+    i16, I16InRange, I16InRangeInclusive;
+    i32, I32InRange, I32InRangeInclusive;
+    i64, I64InRange, I64InRangeInclusive;
+    i128, I128InRange, I128InRangeInclusive;
+    isize, IsizeInRange, IsizeInRangeInclusive;
+    u8, U8InRange, U8InRangeInclusive;
+    u16, U16InRange, U16InRangeInclusive;
+    u32, U32InRange, U32InRangeInclusive;
+    u64, U64InRange, U64InRangeInclusive;
+    u128, U128InRange, U128InRangeInclusive;
+    usize, UsizeInRange, UsizeInRangeInclusive;
+    char, CharInRange, CharInRangeInclusive;
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::{
@@ -1746,6 +1833,48 @@ mod test {
                 PathBuf::from("/home/foo//.."),
                 PathBuf::from("/home/foo/../bar"),
             ],
+        );
+    }
+
+    macro_rules! arby_int_range {
+        ( $($t:ty, $range:ident, $range_inclusive:ident, $min:expr, $max:expr;)+ ) => {
+            arby_int_range!(@inner $($t, $range, {<$t>::MIN}, {<$t>::MAX};)+);
+            arby_int_range!(@inner $($t, $range, $min, $max;)+);
+            arby_int_range!(@inner $($t, $range_inclusive, {<$t>::MIN}, {<$t>::MAX};)+);
+            arby_int_range!(@inner $($t, $range_inclusive, $min, $max;)+);
+        };
+        ( @inner $($t:ty, $range:ident, $min:expr, $max:expr;)+ ) => {$(
+            let num_samples = 100_000;
+                let is_inclusive = $range::<$min, $max>::IS_INCLUSIVE;
+                let arbys = (0..num_samples).map(|_| arby::<$range<{$min}, {$max}>>()).collect::<Vec<_>>();
+                assert!(arbys.iter().all(|x| $min <= x.0 && x.0 <= $max - is_inclusive.then_some(0).unwrap_or(1)),
+                    "Arbitrary generates values outside of the specified range");
+                let mean = arbys.iter().map(|x| x.0 as f64).sum::<f64>() / arbys.len() as f64;
+                let expected_mean = ($min as f64 + $max as f64 - is_inclusive.then_some(0.0).unwrap_or(1.0)) / 2.0;
+                let range_len = ($max as f64 - $min as f64) + is_inclusive.then_some(1.0).unwrap_or(0.0);
+                assert!((mean - expected_mean).abs() < range_len / 100.0,
+                    concat!("Arbitrary does not generate values uniformly in the range: ",
+                        "mean = {}, expected_mean = {}, range_len = {}"),
+                    mean, expected_mean, range_len);
+
+        )*};
+    }
+
+    #[test]
+    fn arby_int_range() {
+        arby_int_range!(
+            i8, I8InRange, I8InRangeInclusive, -10, 10;
+            i16, I16InRange, I16InRangeInclusive, -10, 10;
+            i32, I32InRange, I32InRangeInclusive, -10, 10;
+            i64, I64InRange, I64InRangeInclusive, -10, 10;
+            i128, I128InRange, I128InRangeInclusive, -10, 10;
+            isize, IsizeInRange, IsizeInRangeInclusive, -10, 10;
+            u8, U8InRange, U8InRangeInclusive, 10, 20;
+            u16, U16InRange, U16InRangeInclusive, 10, 20;
+            u32, U32InRange, U32InRangeInclusive, 10, 20;
+            u64, U64InRange, U64InRangeInclusive, 10, 20;
+            u128, U128InRange, U128InRangeInclusive, 10, 20;
+            usize, UsizeInRange, UsizeInRangeInclusive, 10, 20;
         );
     }
 }

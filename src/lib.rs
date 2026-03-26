@@ -20,7 +20,14 @@ semver compatible releases.
 */
 
 pub use crate::arbitrary::{
-    empty_shrinker, single_shrinker, Arbitrary, Gen, NoShrink,
+    empty_shrinker, single_shrinker, Arbitrary, CharInRange,
+    CharInRangeInclusive, Gen, I128InRange, I128InRangeInclusive, I16InRange,
+    I16InRangeInclusive, I32InRange, I32InRangeInclusive, I64InRange,
+    I64InRangeInclusive, I8InRange, I8InRangeInclusive, IsizeInRange,
+    IsizeInRangeInclusive, NoShrink, U128InRange, U128InRangeInclusive,
+    U16InRange, U16InRangeInclusive, U32InRange, U32InRangeInclusive,
+    U64InRange, U64InRangeInclusive, U8InRange, U8InRangeInclusive,
+    UsizeInRange, UsizeInRangeInclusive, ValueInRange,
 };
 pub use crate::tester::{quickcheck, QuickCheck, TestResult, Testable};
 
