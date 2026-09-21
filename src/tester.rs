@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::cmp;
 use std::env;
 use std::fmt::Debug;
@@ -208,6 +209,7 @@ pub struct TestResult {
     status: Status,
     arguments: Option<Vec<String>>,
     err: Option<String>,
+    location: Option<panic::Location<'static>>,
 }
 
 /// Whether a test has passed, failed or been discarded.
@@ -241,7 +243,12 @@ impl TestResult {
     /// When a test is discarded, `quickcheck` will replace it with a
     /// fresh one (up to a certain limit).
     pub fn discard() -> TestResult {
-        TestResult { status: Discard, arguments: None, err: None }
+        TestResult {
+            status: Discard,
+            arguments: None,
+            err: None,
+            location: None,
+        }
     }
 
     /// Converts a `bool` to a `TestResult`. A `true` value indicates that
@@ -252,6 +259,7 @@ impl TestResult {
             status: if b { Pass } else { Fail },
             arguments: None,
             err: None,
+            location: None,
         }
     }
 
@@ -287,10 +295,14 @@ impl TestResult {
             None => "No Arguments Provided".to_owned(),
             Some(ref args) => format!("Arguments: ({})", args.join(", ")),
         };
-        match self.err {
-            None => format!("[quickcheck] TEST FAILED. {arguments_msg}"),
-            Some(ref err) => format!(
-                "[quickcheck] TEST FAILED (runtime error). {arguments_msg}\nError: {err}"
+        match (self.err.as_ref(), self.location) {
+            (None, None) => format!("[quickcheck] TEST FAILED.\n{arguments_msg}"),
+            (None, Some(ref location)) => format!("[quickcheck] TEST FAILED at {location}.\n{arguments_msg}"),
+            (Some(ref err), None) => format!(
+                "[quickcheck] TEST FAILED (runtime error).\n{arguments_msg}\nError: {err}"
+            ),
+            (Some(ref err), Some(ref location)) => format!(
+                "[quickcheck] TEST FAILED (runtime error) at {location}.\n{arguments_msg}\nError: {err}"
             ),
         }
     }
@@ -358,6 +370,22 @@ where
     }
 }
 
+impl<T> Testable for SafeResult<T>
+where
+    T: Testable,
+{
+    fn result(&self, g: &mut Gen) -> TestResult {
+        match *self {
+            SafeResult::Ok(ref r) => r.result(g),
+            SafeResult::Err { ref message, ref location } => {
+                let mut result = TestResult::error(message.clone());
+                result.location = *location;
+                result
+            }
+        }
+    }
+}
+
 /// Return a vector of the debug formatting of each item in `args`
 fn debug_reprs(args: &[&dyn Debug]) -> Vec<String> {
     args.iter().map(|x| format!("{x:?}")).collect()
@@ -411,23 +439,49 @@ testable_fn!(A, B, C, D, E, F);
 testable_fn!(A, B, C, D, E, F, G);
 testable_fn!(A, B, C, D, E, F, G, H);
 
-fn safe<T, F>(fun: F) -> Result<T, String>
+enum SafeResult<T> {
+    Ok(T),
+    Err { message: String, location: Option<panic::Location<'static>> },
+}
+
+thread_local! {
+    static PANIC_LOCATION: RefCell<Option<panic::Location<'static>>> = const { RefCell::new(None) };
+}
+
+fn safe<T, F>(fun: F) -> SafeResult<T>
 where
     F: FnOnce() -> T,
     F: 'static,
     T: 'static,
 {
-    panic::catch_unwind(panic::AssertUnwindSafe(fun)).map_err(|any_err| {
-        // Extract common types of panic payload:
-        // panic and assert produce &str or String
-        if let Some(&s) = any_err.downcast_ref::<&str>() {
-            s.to_owned()
-        } else if let Some(s) = any_err.downcast_ref::<String>() {
-            s.to_owned()
-        } else {
-            "UNABLE TO SHOW RESULT OF PANIC.".to_owned()
+    let old_hook = panic::take_hook();
+    panic::set_hook(Box::new(|hook_info| {
+        PANIC_LOCATION.with(|cell| {
+            *cell.borrow_mut() = hook_info.location().cloned();
+        });
+    }));
+
+    let result = match panic::catch_unwind(panic::AssertUnwindSafe(fun)) {
+        Ok(x) => SafeResult::Ok(x),
+        Err(any_err) => {
+            // Extract common types of panic payload:
+            // panic and assert produce &str or String
+            SafeResult::Err {
+                message: if let Some(&s) = any_err.downcast_ref::<&str>() {
+                    s.to_owned()
+                } else if let Some(s) = any_err.downcast_ref::<String>() {
+                    s.to_owned()
+                } else {
+                    "UNABLE TO SHOW RESULT OF PANIC.".to_owned()
+                },
+                location: PANIC_LOCATION.with(|cell| *cell.borrow()),
+            }
         }
-    })
+    };
+
+    panic::set_hook(old_hook);
+
+    result
 }
 
 #[cfg(test)]
