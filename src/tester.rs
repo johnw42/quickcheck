@@ -208,7 +208,6 @@ pub struct TestResult {
     status: Status,
     arguments: Option<Vec<String>>,
     err: Option<String>,
-    location: Option<panic::Location<'static>>,
 }
 
 /// Whether a test has passed, failed or been discarded.
@@ -242,12 +241,7 @@ impl TestResult {
     /// When a test is discarded, `quickcheck` will replace it with a
     /// fresh one (up to a certain limit).
     pub fn discard() -> TestResult {
-        TestResult {
-            status: Discard,
-            arguments: None,
-            err: None,
-            location: None,
-        }
+        TestResult { status: Discard, arguments: None, err: None }
     }
 
     /// Converts a `bool` to a `TestResult`. A `true` value indicates that
@@ -258,7 +252,6 @@ impl TestResult {
             status: if b { Pass } else { Fail },
             arguments: None,
             err: None,
-            location: None,
         }
     }
 
@@ -294,14 +287,10 @@ impl TestResult {
             None => "No Arguments Provided".to_owned(),
             Some(ref args) => format!("Arguments: ({})", args.join(", ")),
         };
-        match (self.err.as_ref(), self.location) {
-            (None, None) => format!("[quickcheck] TEST FAILED.\n{arguments_msg}"),
-            (None, Some(ref location)) => format!("[quickcheck] TEST FAILED at {location}.\n{arguments_msg}"),
-            (Some(ref err), None) => format!(
+        match self.err.as_ref() {
+            None => format!("[quickcheck] TEST FAILED.\n{arguments_msg}"),
+            Some(ref err) => format!(
                 "[quickcheck] TEST FAILED (runtime error).\n{arguments_msg}\nError: {err}"
-            ),
-            (Some(ref err), Some(ref location)) => format!(
-                "[quickcheck] TEST FAILED (runtime error) at {location}.\n{arguments_msg}\nError: {err}"
             ),
         }
     }
