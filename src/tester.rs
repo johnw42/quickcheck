@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::cmp;
 use std::env;
 use std::fmt::Debug;
@@ -377,11 +376,7 @@ where
     fn result(&self, g: &mut Gen) -> TestResult {
         match *self {
             SafeResult::Ok(ref r) => r.result(g),
-            SafeResult::Err { ref message, ref location } => {
-                let mut result = TestResult::error(message.clone());
-                result.location = *location;
-                result
-            }
+            SafeResult::Err(ref message) => TestResult::error(message.clone()),
         }
     }
 }
@@ -441,11 +436,7 @@ testable_fn!(A, B, C, D, E, F, G, H);
 
 enum SafeResult<T> {
     Ok(T),
-    Err { message: String, location: Option<panic::Location<'static>> },
-}
-
-thread_local! {
-    static PANIC_LOCATION: RefCell<Option<panic::Location<'static>>> = const { RefCell::new(None) };
+    Err(String),
 }
 
 fn safe<T, F>(fun: F) -> SafeResult<T>
@@ -454,34 +445,20 @@ where
     F: 'static,
     T: 'static,
 {
-    let old_hook = panic::take_hook();
-    panic::set_hook(Box::new(|hook_info| {
-        PANIC_LOCATION.with(|cell| {
-            *cell.borrow_mut() = hook_info.location().cloned();
-        });
-    }));
-
-    let result = match panic::catch_unwind(panic::AssertUnwindSafe(fun)) {
+    match panic::catch_unwind(panic::AssertUnwindSafe(fun)) {
         Ok(x) => SafeResult::Ok(x),
         Err(any_err) => {
             // Extract common types of panic payload:
             // panic and assert produce &str or String
-            SafeResult::Err {
-                message: if let Some(&s) = any_err.downcast_ref::<&str>() {
-                    s.to_owned()
-                } else if let Some(s) = any_err.downcast_ref::<String>() {
-                    s.to_owned()
-                } else {
-                    "UNABLE TO SHOW RESULT OF PANIC.".to_owned()
-                },
-                location: PANIC_LOCATION.with(|cell| *cell.borrow()),
-            }
+            SafeResult::Err(if let Some(&s) = any_err.downcast_ref::<&str>() {
+                s.to_owned()
+            } else if let Some(s) = any_err.downcast_ref::<String>() {
+                s.to_owned()
+            } else {
+                "UNABLE TO SHOW RESULT OF PANIC.".to_owned()
+            })
         }
-    };
-
-    panic::set_hook(old_hook);
-
-    result
+    }
 }
 
 #[cfg(test)]
