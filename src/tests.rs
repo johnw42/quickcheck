@@ -214,11 +214,11 @@ fn panic_msg_2() {
 }
 
 #[test]
-// #[should_panic(expected = r#"
-// No Arguments Provided
-// Error: assertion `left == right` failed
-//   left: "foo"
-//  right: "bar""#)]
+#[should_panic(expected = r#"
+No Arguments Provided
+Error: assertion `left == right` failed
+  left: "foo"
+ right: "bar""#)]
 fn panic_msg_3() {
     fn prop() -> bool {
         assert_eq!("foo", "bar");

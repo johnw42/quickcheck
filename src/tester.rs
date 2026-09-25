@@ -287,7 +287,7 @@ impl TestResult {
             None => "No Arguments Provided".to_owned(),
             Some(ref args) => format!("Arguments: ({})", args.join(", ")),
         };
-        match self.err.as_ref() {
+        match self.err {
             None => format!("[quickcheck] TEST FAILED.\n{arguments_msg}"),
             Some(ref err) => format!(
                 "[quickcheck] TEST FAILED (runtime error).\n{arguments_msg}\nError: {err}"
